@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JARVIS</title>
+<style>
+  :root {
+    --bg: #05090f; --panel: rgba(12, 24, 38, .78); --line: #12364d;
+    --cyan: #3fd8ff; --cyan-dim: #1a6f8c; --text: #cfefff; --muted: #6f97ad;
+    --warn: #ffb347; --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(ellipse at 50% 30%, #0b2236 0%, var(--bg) 65%);
+    color: var(--text); font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid var(--line); letter-spacing: .25em;
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--cyan); }
+  header .meta { font-size: 12px; color: var(--muted); letter-spacing: .1em; }
+  button { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--cyan); color: var(--cyan); }
+  main { flex: 1; display: grid; grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.3fr); min-height: 0; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } }
+
+  /* Reactor orb */
+  .core { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; gap: 18px; }
+  .orb { position: relative; width: min(52vw, 280px); aspect-ratio: 1; cursor: pointer; }
+  @media (max-width: 760px) { .orb { width: 150px; } }
+  .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--cyan-dim); }
+  .ring.r1 { border-style: dashed; animation: spin 24s linear infinite; }
+  .ring.r2 { inset: 12%; border-color: var(--cyan); border-width: 3px; border-left-color: transparent; border-right-color: transparent; animation: spin 8s linear infinite reverse; }
+  .ring.r3 { inset: 26%; border-width: 1px; border-top-color: transparent; animation: spin 5s linear infinite; }
+  .center { position: absolute; inset: 36%; border-radius: 50%;
+    background: radial-gradient(circle, #e9fbff 0%, var(--cyan) 35%, rgba(63,216,255,.15) 70%, transparent 72%);
+    box-shadow: 0 0 40px var(--cyan); transition: transform .08s linear; }
+  .orb[data-state="listening"] .ring.r2 { border-color: #7dffb0; border-left-color: transparent; border-right-color: transparent; }
+  .orb[data-state="listening"] .center { box-shadow: 0 0 60px #7dffb0; }
+  .orb[data-state="thinking"] .ring.r2 { animation-duration: 1.2s; }
+  .orb[data-state="speaking"] .center { animation: pulse .5s ease-in-out infinite alternate; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { from { transform: scale(.92); } to { transform: scale(1.1); } }
+  .status { font-size: 12px; letter-spacing: .3em; color: var(--cyan); text-transform: uppercase; min-height: 18px; }
+  .hint { font-size: 12px; color: var(--muted); text-align: center; max-width: 320px; }
+
+  /* Console */
+  .console { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--panel); }
+  @media (max-width: 760px) { .console { border-left: 0; border-top: 1px solid var(--line); } }
+  #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 92%; padding: 10px 14px; border-radius: 10px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: #0f3049; border: 1px solid #1d4d6c; }
+  .msg.jarvis { align-self: flex-start; border: 1px solid var(--line); background: rgba(5, 14, 24, .7); }
+  .msg.jarvis::before { content: "JARVIS"; display: block; font-size: 10px; letter-spacing: .3em; color: var(--cyan); margin-bottom: 4px; }
+  .msg.system { align-self: center; font-size: 12px; color: var(--muted); }
+  .msg.error { align-self: center; font-size: 13px; color: var(--err); }
+  .msg a { color: var(--cyan); }
+  form.input { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  form.input input { flex: 1; min-width: 0; background: #071422; color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 10px 12px; font: inherit; }
+  form.input input:focus { outline: none; border-color: var(--cyan); }
+  #mic.on { border-color: #7dffb0; color: #7dffb0; }
+
+  /* Settings */
+  dialog { background: #081521; color: var(--text); border: 1px solid var(--cyan-dim); border-radius: 10px; width: min(480px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog h2 { margin-top: 0; font-size: 15px; letter-spacing: .2em; color: var(--cyan); }
+  dialog label { display: block; margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
+  dialog input[type=password], dialog input[type=text], dialog select { width: 100%; background: #071422; color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; }
+  dialog .row { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 14px; }
+  dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  dialog small { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>J.A.R.V.I.S.</h1>
+  <span class="meta" id="clock"></span>
+  <button id="settingsBtn" type="button">Settings</button>
+</header>
+
+<main>
+  <section class="core">
+    <div class="orb" id="orb" data-state="idle" title="Click to talk">
+      <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="center" id="center"></div>
+    </div>
+    <div class="status" id="status">Online</div>
+    <div class="hint" id="hint">Click the core or press <b>Space</b> to talk. Try “what time is it”, “open youtube”, “set a timer for 5 minutes”, or ask anything.</div>
+  </section>
+
+  <section class="console">
+    <div id="log"></div>
+    <form class="input" id="form">
+      <button id="mic" type="button" title="Talk">🎙</button>
+      <input id="text" autocomplete="off" placeholder="Type a command or question…">
+      <button type="submit">Send</button>
+    </form>
+  </section>
+</main>
+
+<dialog id="settings">
+  <form method="dialog">
+    <h2>SYSTEM SETTINGS</h2>
+    <label for="apiKey">Anthropic API key</label>
+    <input id="apiKey" type="password" placeholder="sk-ant-…" autocomplete="off">
+    <small>Stored only in this browser (localStorage) and sent only to api.anthropic.com.</small>
+    <label for="userName">What should I call you?</label>
+    <input id="userName" type="text" placeholder="sir">
+    <label for="voice">Voice</label>
+    <select id="voice"></select>
+    <div class="row"><input id="speak" type="checkbox"><label for="speak" style="margin:0">Speak replies aloud</label></div>
+    <div class="row"><input id="wake" type="checkbox"><label for="wake" style="margin:0">Always listen for “Jarvis …” (wake word)</label></div>
+    <div class="row"><input id="search" type="checkbox"><label for="search" style="margin:0">Allow web search for live info</label></div>
+    <div class="actions">
+      <button value="clear" type="submit">Clear memory</button>
+      <button value="save" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module">
+// Loaded lazily so the interface and local commands keep working even if the CDN is unreachable.
+const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.3.0/+esm";
+let Anthropic = null;
+
+const MODEL = "claude-opus-5-5";
+const $ = (id) => document.getElementById(id);
+const log = $("log"), orb = $("orb"), statusEl = $("status");
+
+// ---------- Settings ----------
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("jarvis." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("jarvis." + k, JSON.stringify(v)); } catch {} },
+};
+const cfg = {
+  apiKey: store.get("apiKey", ""), userName: store.get("userName", "sir"),
+  voice: store.get("voice", ""), speak: store.get("speak", true),
+  wake: store.get("wake", false), search: store.get("search", true),
+};
+
+// ---------- UI helpers ----------
+function setState(s, label) { orb.dataset.state = s; statusEl.textContent = label ?? s; }
+function addMsg(role, text = "") {
+  const el = document.createElement("div");
+  el.className = "msg " + role; el.textContent = text;
+  log.appendChild(el); log.scrollTop = log.scrollHeight; return el;
+}
+function linkify(el, text) {
+  el.textContent = "";
+  const parts = text.split(/(https?:\/\/[^\s)\]]+)/g);
+  for (const p of parts) {
+    if (/^https?:\/\//.test(p)) { const a = document.createElement("a"); a.href = p; a.textContent = p; a.target = "_blank"; a.rel = "noopener"; el.appendChild(a); }
+    else el.appendChild(document.createTextNode(p));
+  }
+}
+setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);
+
+// ---------- Speech output ----------
+let voices = [];
+function loadVoices() {
+  voices = speechSynthesis.getVoices();
+  const sel = $("voice"); sel.innerHTML = "";
+  const en = voices.filter(v => v.lang.startsWith("en"));
+  for (const v of (en.length ? en : voices)) {
+    const o = document.createElement("option"); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; sel.appendChild(o);
+  }
+  if (!cfg.voice) {
+    const pick = en.find(v => /en-GB/.test(v.lang) && /male|daniel|arthur|george|ryan/i.test(v.name)) || en.find(v => /en-GB/.test(v.lang)) || en[0];
+    if (pick) cfg.voice = pick.name;
+  }
+  sel.value = cfg.voice;
+}
+if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+
+const speechQueue = [];
+let speaking = false;
+function speak(text) {
+  if (!cfg.speak || !("speechSynthesis" in window) || !text.trim()) return;
+  const u = new SpeechSynthesisUtterance(text.replace(/[*_#`>]/g, "").replace(/https?:\/\/\S+/g, "the link"));
+  const v = voices.find(v => v.name === cfg.voice); if (v) u.voice = v;
+  u.rate = 1.03; u.pitch = 0.95;
+  u.onstart = () => { speaking = true; setState("speaking", "Speaking"); };
+  u.onend = u.onerror = () => {
+    speechQueue.shift();
+    if (!speechQueue.length) { speaking = false; if (orb.dataset.state === "speaking") setState("idle", "Online"); resumeWake(); }
+  };
+  speechQueue.push(u); speechSynthesis.speak(u);
+}
+function stopSpeaking() { speechQueue.length = 0; speechSynthesis?.cancel(); speaking = false; }
+
+// ---------- Speech input ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, wakeMode = false;
+function startListening(fromWake = false) {
+  if (!SR) { addMsg("error", "Voice input isn't supported in this browser — try Chrome or Edge. You can still type."); return; }
+  if (listening) { rec.stop(); return; }
+  stopSpeaking();
+  rec = new SR(); rec.lang = "en-US"; rec.interimResults = true; rec.continuous = fromWake;
+  wakeMode = fromWake;
+  let finalText = "", interimEl = null;
+  rec.onstart = () => { listening = true; $("mic").classList.add("on"); if (!wakeMode) setState("listening", "Listening"); };
+  rec.onresult = (e) => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        if (wakeMode) {
+          const m = t.match(/\b(?:hey\s+|ok\s+)?jarvis\b[,.!?\s]*(.*)$/i);
+          if (m) { rec.stop(); if (m[1].trim()) handle(m[1].trim()); else { speak("Yes?"); setTimeout(() => startListening(false), 600); } return; }
+        } else finalText += t;
+      } else interim += t;
+    }
+    if (!wakeMode) {
+      interimEl ??= addMsg("user system", "");
+      interimEl.textContent = (finalText + interim) || "…";
+    }
+  };
+  rec.onerror = (e) => { if (e.error !== "no-speech" && e.error !== "aborted") addMsg("error", "Mic error: " + e.error); };
+  rec.onend = () => {
+    listening = false; $("mic").classList.remove("on");
+    interimEl?.remove();
+    if (!wakeMode) { if (finalText.trim()) handle(finalText.trim()); else { setState("idle", "Online"); resumeWake(); } }
+    else if (cfg.wake && orb.dataset.state === "idle") setTimeout(() => resumeWake(), 300);
+  };
+  rec.start();
+}
+function resumeWake() { if (cfg.wake && SR && !listening && !speaking && orb.dataset.state !== "thinking") startListening(true); }
+
+// ---------- Local skills (instant, no API needed) ----------
+const SITES = { youtube: "https://youtube.com", google: "https://google.com", gmail: "https://mail.google.com",
+  github: "https://github.com", maps: "https://maps.google.com", calendar: "https://calendar.google.com",
+  spotify: "https://open.spotify.com", netflix: "https://netflix.com", reddit: "https://reddit.com",
+  wikipedia: "https://wikipedia.org", twitter: "https://x.com", x: "https://x.com", amazon: "https://amazon.com", news: "https://news.google.com" };
+
+function localSkill(q) {
+  const s = q.toLowerCase().replace(/[?.!]+$/, "").trim();
+  if (/^(what('?s| is) the )?time( is it)?( now)?$|^what time is it/.test(s))
+    return `It's ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}, ${cfg.userName}.`;
+  if (/^(what('?s| is) )?(today'?s |the )?date( today)?$|^what day is (it|today)/.test(s))
+    return `Today is ${new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" })}.`;
+  let m = s.match(/^(?:open|launch|go to)\s+(.+)$/);
+  if (m) {
+    const name = m[1].replace(/^the\s+/, "").replace(/\s+/g, "");
+    const url = SITES[name] || (/\.[a-z]{2,}$/.test(name) ? "https://" + name : null);
+    if (url) { window.open(url, "_blank", "noopener"); return `Opening ${m[1]}.`; }
+  }
+  m = s.match(/^(?:google|search(?: google)?(?: for)?|look up)\s+(.+)$/);
+  if (m) { window.open("https://www.google.com/search?q=" + encodeURIComponent(m[1]), "_blank", "noopener"); return `Searching for ${m[1]}.`; }
+  m = s.match(/^(?:set (?:a |an )?)?timer (?:for )?(\d+)\s*(second|sec|minute|min|hour)s?$|^(?:set (?:a |an )?)?(\d+)\s*(second|sec|minute|min|hour)s? timer$/);
+  if (m) {
+    const n = +(m[1] || m[3]), unit = (m[2] || m[4]);
+    const ms = n * (unit.startsWith("h") ? 3600e3 : unit.startsWith("m") ? 60e3 : 1e3);
+    const label = `${n} ${unit.startsWith("h") ? "hour" : unit.startsWith("m") ? "minute" : "second"}${n === 1 ? "" : "s"}`;
+    setTimeout(() => { addMsg("jarvis", `⏰ Your ${label} timer is done, ${cfg.userName}.`); speak(`${cfg.userName}, your ${label} timer is done.`); beep(); }, ms);
+    return `Timer set for ${label}.`;
+  }
+  if (/^(stop|quiet|shut up|be quiet|cancel)$/.test(s)) { stopSpeaking(); return ""; }
+  if (/^(clear|reset|forget)( (the )?(memory|conversation|chat))?$/.test(s)) { history.length = 0; return "Memory cleared. Fresh start."; }
+  return null;
+}
+function beep() {
+  try { const ctx = new AudioContext(); [0, .3, .6].forEach(t => { const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 880; o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(.2, ctx.currentTime + t);
+    o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + .18); }); } catch {}
+}
+
+// ---------- Claude brain ----------
+const history = [];
+function systemPrompt() {
+  return `You are JARVIS, a witty, calm, highly capable personal AI assistant with a dry British sense of humour.
+Address the user as "${cfg.userName}" occasionally (not every sentence).
+Your replies are usually spoken aloud, so keep them conversational and brief: 1-3 sentences by default.
+Avoid markdown, bullet lists, tables and code blocks unless the user explicitly asks for detail or code.
+If you need current information (news, weather, prices, scores, recent events), use web search.
+The user's local time is ${new Date().toString()}.`;
+}
+
+async function askClaude(text, el) {
+  Anthropic ??= (await import(SDK_URL)).default;
+  const client = new Anthropic({ apiKey: cfg.apiKey, dangerouslyAllowBrowser: true });
+  history.push({ role: "user", content: text });
+  const tools = cfg.search ? [{ type: "web_search_20260209", name: "web_search", max_uses: 3 }] : undefined;
+
+  let full = "", spokenUpTo = 0;
+  // Speak each completed sentence as it streams in, so JARVIS starts talking early.
+  const flushSpeech = (final) => {
+    let rest = full.slice(spokenUpTo), m;
+    while ((m = rest.match(/^[\s\S]*?[.!?](?=\s)/))) { speak(m[0].trim()); spokenUpTo += m[0].length; rest = full.slice(spokenUpTo); }
+    if (final && rest.trim()) { speak(rest.trim()); spokenUpTo = full.length; }
+  };
+
+  // Loop handles pause_turn from long-running server tools (web search).
+  for (let i = 0; i < 4; i++) {
+    const stream = client.beta.messages.stream({
+      model: MODEL,
+      max_tokens: 8000,
+      system: systemPrompt(),
+      messages: history,
+      tools,
+      output_config: { effort: "low" },
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+    });
+    stream.on("text", (delta) => {
+      if (orb.dataset.state === "thinking") setState("thinking", "Responding");
+      full += delta; el.textContent = full; log.scrollTop = log.scrollHeight;
+      flushSpeech(false);
+    });
+    stream.on("contentBlock", (b) => { if (b.type === "server_tool_use") setState("thinking", "Searching the web"); });
+    const msg = await stream.finalMessage();
+    history.push({ role: "assistant", content: msg.content });
+    if (msg.stop_reason === "refusal") { full ||= "I'm afraid I can't help with that one."; break; }
+    if (msg.stop_reason !== "pause_turn") break;
+  }
+  flushSpeech(true);
+  linkify(el, full || "(no response)");
+  return full;
+}
+
+let busy = false;
+async function handle(text) {
+  if (busy) return;
+  addMsg("user", text);
+  const local = localSkill(text);
+  if (local !== null) {
+    if (local) { addMsg("jarvis", local); speak(local); }
+    if (!speechQueue.length) { setState("idle", "Online"); resumeWake(); }
+    return;
+  }
+  if (!cfg.apiKey) {
+    const m = "I need an Anthropic API key to think beyond the basics. Open Settings to add one.";
+    addMsg("jarvis", m); speak(m); setState("idle", "Online"); $("settings").showModal(); return;
+  }
+  busy = true; setState("thinking", "Thinking");
+  const el = addMsg("jarvis", "…");
+  try { await askClaude(text, el); }
+  catch (err) {
+    el.remove();
+    // Drop the unanswered user turn so history stays valid.
+    if (history.at(-1)?.role === "user") history.pop();
+    const status = err?.status;
+    const msg = status === 401 ? "That API key was rejected. Please check it in Settings."
+      : status === 429 ? "I'm being rate limited. Give me a moment and try again."
+      : status === 529 || status >= 500 ? "Anthropic's servers are overloaded right now. Try again shortly."
+      : "Something went wrong: " + (err?.message || err);
+    addMsg("error", msg); speak(msg);
+  } finally {
+    busy = false;
+    if (!speechQueue.length) { setState("idle", "Online"); resumeWake(); }
+  }
+}
+
+// ---------- Wiring ----------
+$("form").addEventListener("submit", (e) => { e.preventDefault(); const t = $("text").value.trim(); if (t) { $("text").value = ""; handle(t); } });
+$("mic").addEventListener("click", () => { if (listening && wakeMode) rec.abort(); startListening(false); });
+orb.addEventListener("click", () => { if (listening && wakeMode) rec.abort(); startListening(false); });
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && document.activeElement === document.body) { e.preventDefault(); if (listening && wakeMode) rec.abort(); startListening(false); }
+  if (e.key === "Escape") stopSpeaking();
+});
+
+const dlg = $("settings");
+$("settingsBtn").addEventListener("click", () => {
+  $("apiKey").value = cfg.apiKey; $("userName").value = cfg.userName; $("voice").value = cfg.voice;
+  $("speak").checked = cfg.speak; $("wake").checked = cfg.wake; $("search").checked = cfg.search;
+  dlg.showModal();
+});
+dlg.addEventListener("close", () => {
+  if (dlg.returnValue === "clear") { history.length = 0; log.innerHTML = ""; addMsg("system", "Memory cleared."); return; }
+  if (dlg.returnValue !== "save") return;
+  Object.assign(cfg, { apiKey: $("apiKey").value.trim(), userName: $("userName").value.trim() || "sir",
+    voice: $("voice").value, speak: $("speak").checked, wake: $("wake").checked, search: $("search").checked });
+  for (const [k, v] of Object.entries(cfg)) store.set(k, v);
+  addMsg("system", "Settings saved.");
+  if (cfg.wake) resumeWake(); else if (listening && wakeMode) rec.abort();
+});
+
+// Greeting
+const h = new Date().getHours();
+const greet = `Good ${h < 12 ? "morning" : h < 18 ? "afternoon" : "evening"}, ${cfg.userName}. All systems online.${cfg.apiKey ? " How can I help?" : " Add your Anthropic API key in Settings to unlock my full capabilities."}`;
+addMsg("jarvis", greet);
+if (!SR) addMsg("system", "Voice input needs Chrome or Edge. Typing works everywhere.");
+resumeWake();
+</script>
+</body>
+</html>
